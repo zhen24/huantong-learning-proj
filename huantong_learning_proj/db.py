@@ -172,6 +172,7 @@ class PgOrganization:
     city = attr.ib()
     county = attr.ib()
     address = attr.ib()
+    come_from = attr.ib()
     created_at = attr.ib()
     updated_at = attr.ib()
     deleted_at = attr.ib()
@@ -242,10 +243,11 @@ def get_org(config, tenant_id, organization_id, not_deleted=False):
 
 @attr.s
 class PgAlias:
-    id = attr.ib()
     tenant_id = attr.ib()
+    id = attr.ib()
     organization_id = attr.ib()
     name = attr.ib()
+    come_from = attr.ib()
     created_at = attr.ib()
     updated_at = attr.ib()
     deleted_at = attr.ib()
@@ -333,14 +335,15 @@ def get_aliases_by_name(config, tenant_id, name, not_deleted=False):
 
 @attr.s
 class PgCollation:
-    collation_id = attr.ib()
     tenant_id = attr.ib()
+    collation_id = attr.ib()
     upstream_id = attr.ib()
     downstream_id = attr.ib()
     query_name = attr.ib()
     query_name_tokens = attr.ib()
     request_at = attr.ib()
     response_at = attr.ib()
+    come_from = attr.ib()
     created_at = attr.ib()
     updated_at = attr.ib()
     deleted_at = attr.ib()
@@ -397,6 +400,219 @@ def get_collations_by_query_name(config, tenant_id, query_name, not_deleted=Fals
         yield from yield_pg_collations(cur)
 
 
+@attr.s
+class PgTrain:
+    task_id = attr.ib()
+    name = attr.ib()
+    description = attr.ib()
+    status = attr.ib()
+    storage_path = attr.ib()
+    created_at = attr.ib()
+    finished_at = attr.ib()
+    deleted_at = attr.ib()
+
+
+def yield_pg_train(cur):
+    yield from yield_pg_objs(cur, PgTrain)
+
+
+def get_train_tasks_by_status(config, status):
+    with create_pg_cursor(config, cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute(
+            '''
+            SELECT *
+            FROM public.train
+            WHERE status = %s
+            ''',
+            (status,),
+        )
+        yield from yield_pg_train(cur)
+
+
+def get_train_tasks(config):
+    with create_pg_cursor(config, cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute('''
+            SELECT *
+            FROM public.train;
+            ''',)
+        yield from yield_pg_train(cur)
+
+
+def set_train_task_status(config, task_id, status):
+    with create_pg_cursor(config, commit=True) as cur:
+        cur.execute(
+            '''
+            UPDATE public.train
+            SET status = %s
+            WHERE task_id = %s
+            ''',
+            (
+                status,
+                task_id,
+            ),
+        )
+
+
+def set_train_task_storage_path(config, task_id, storage_path):
+    with create_pg_cursor(config, commit=True) as cur:
+        cur.execute(
+            '''
+            UPDATE public.train
+            SET storage_path = %s
+            WHERE task_id = %s
+            ''',
+            (
+                storage_path,
+                task_id,
+            ),
+        )
+
+
+def get_train_by_task_ids(config, task_ids):
+    assert isinstance(task_ids, (tuple, list))
+
+    if not task_ids:
+        return
+
+    with create_pg_cursor(config, cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute(
+            '''
+            SELECT *
+            FROM public.train
+            WHERE task_id in %s
+            ''',
+            (tuple(task_ids),),
+        )
+        yield from yield_pg_train(cur)
+
+
+def delete_train_by_task_ids(config, task_ids):
+    assert isinstance(task_ids, (tuple, list))
+
+    if not task_ids:
+        return
+
+    with create_pg_cursor(config, commit=True) as cur:
+        cur.execute(
+            '''
+            DELETE FROM public.train
+            WHERE task_id in %s
+            ''',
+            (tuple(task_ids),),
+        )
+
+
+def get_train_by_name(config, name):
+    with create_pg_cursor(config, cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute(
+            '''
+            SELECT *
+            FROM public.train
+            WHERE name = %s
+            ''',
+            (name,),
+        )
+        yield from yield_pg_train(cur)
+
+
+def reset_using_train_task(config):
+    with create_pg_cursor(config, commit=True) as cur:
+        cur.execute(
+            '''
+            UPDATE public.train
+            SET status = '训练完成'
+            WHERE status = '使用中'
+            ''',
+        )
+
+
+@attr.s
+class PgModel:
+    task_id = attr.ib()
+    name = attr.ib()
+    description = attr.ib()
+    model_source = attr.ib()
+    status = attr.ib()
+    created_at = attr.ib()
+    finished_at = attr.ib()
+    deleted_at = attr.ib()
+
+
+def yield_pg_model(cur):
+    yield from yield_pg_objs(cur, PgModel)
+
+
+def get_model_tasks_by_status(config, status):
+    with create_pg_cursor(config, cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute(
+            '''
+            SELECT *
+            FROM public.model
+            WHERE status = %s
+            ''',
+            (status,),
+        )
+        yield from yield_pg_model(cur)
+
+
+def get_model_tasks(config):
+    with create_pg_cursor(config, cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute('''
+            SELECT *
+            FROM public.model
+            ''',)
+        yield from yield_pg_model(cur)
+
+
+def set_model_task_status(config, task_id, status):
+    with create_pg_cursor(config, commit=True) as cur:
+        cur.execute(
+            '''
+            UPDATE public.model
+            SET status = %s
+            WHERE task_id = %s
+            ''',
+            (
+                status,
+                task_id,
+            ),
+        )
+
+
+def get_model_by_task_ids(config, task_ids):
+    assert isinstance(task_ids, (tuple, list))
+
+    if not task_ids:
+        return
+
+    with create_pg_cursor(config, cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute(
+            '''
+            SELECT *
+            FROM public.model
+            WHERE task_id in %s
+            ''',
+            (tuple(task_ids),),
+        )
+        yield from yield_pg_model(cur)
+
+
+def delete_model_by_task_ids(config, task_ids):
+    assert isinstance(task_ids, (tuple, list))
+
+    if not task_ids:
+        return
+
+    with create_pg_cursor(config, commit=True) as cur:
+        cur.execute(
+            '''
+            DELETE FROM public.model
+            WHERE task_id in %s
+            ''',
+            (tuple(task_ids),),
+        )
+
+
 def debug():
     config = PostgresConfig(
         host='192.168.1.172',
@@ -432,10 +648,6 @@ def debug():
             break
 
     set_task_to_finished(config, 334)
-
-
-def get_training_task():
-    return 'dgs'
 
 
 def debug_local():

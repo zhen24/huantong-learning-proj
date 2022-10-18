@@ -72,21 +72,23 @@ def load_ovalmaster_csv(ovalmaster_csv, tqdm=True):
         skip_header=True,
         tqdm=tqdm,
     ):
-        if struct['STATUS'] != '41':
+        if struct.get('status', '41') != '41':
             continue
 
-        organization_id = struct['OVALMASTERID']
-        province = struct['REGIONNAME']
-        city = struct['CITYNAME']
-        county = struct['COUNTYNAME']
-        name = struct['ORGNAME']
-        created_at = struct['CREATEDATE']
-        updated_at = struct['DATELASTUPDATED']
+        organization_id = struct['organization_id']
+        name = struct['name']
+        province = struct['province']
+        city = struct['city']
+        county = struct['county']
+        come_from = struct.get('come_from', '历史运营')
+        created_at = struct['created_at'][:19]
+        updated_at = struct['updated_at'][:19]
 
         yield (
             organization_id,
-            (province, city, county),
             name,
+            (province, city, county),
+            come_from,
             created_at,
             updated_at,
         )
@@ -99,23 +101,25 @@ def load_orgalias_csv_default(orgalias_csv, tqdm=True):
         skip_header=True,
         tqdm=tqdm,
     ):
-        id = struct['ORGALIASID']
-        organization_id = struct['ORGID']
-        org_name = struct['ORGNAME']
-        alias_name = struct['ALIASNAME']
-        created_at = struct['CREATEDATE']
-        updated_at = struct['UPDATETIME']
+        alias_id = struct['id']
+        organization_id = struct['organization_id']
+        org_name = struct.get('org_name')
+        alias_name = struct['name']
+        come_from = struct.get('come_from', '历史运营')
+        created_at = struct['created_at'][:19]
+        updated_at = struct['updated_at'][:19]
 
         if not organization_id:
             continue
-        if not alias_name or not org_name:
+        if not alias_name and not org_name:
             continue
 
         yield (
-            id,
+            alias_id,
             organization_id,
             org_name,
             alias_name,
+            come_from,
             created_at,
             updated_at,
         )
@@ -125,8 +129,9 @@ def load_orgalias_csv_and_patch(orgalias_csv, ovalmaster_csv, tqdm=True):
     org_id_to_name = {}
     for (
         organization_id,
-        _,
         name,
+        _,
+        _,
         _,
         _,
     ) in load_ovalmaster_csv(ovalmaster_csv):
@@ -134,20 +139,22 @@ def load_orgalias_csv_and_patch(orgalias_csv, ovalmaster_csv, tqdm=True):
 
     org_id_to_raw_aliases = defaultdict(list)
     for (
-        id,
+        alias_id,
         organization_id,
         org_name,
         alias_name,
+        come_from,
         created_at,
         updated_at,
     ) in load_orgalias_csv_default(orgalias_csv, tqdm=tqdm):
         if organization_id not in org_id_to_name:
             continue
         org_id_to_raw_aliases[organization_id].append((
-            id,
+            alias_id,
             organization_id,
             org_name,
             alias_name,
+            come_from,
             created_at,
             updated_at,
         ))
@@ -157,10 +164,11 @@ def load_orgalias_csv_and_patch(orgalias_csv, ovalmaster_csv, tqdm=True):
 
         first_pass_names = set()
         for (
-            id,
+            alias_id,
             organization_id,
             org_name,
             alias_name,
+            come_from,
             created_at,
             updated_at,
         ) in aliases:
@@ -171,19 +179,21 @@ def load_orgalias_csv_and_patch(orgalias_csv, ovalmaster_csv, tqdm=True):
                 continue
             first_pass_names.add(alias_name)
             yield (
-                id,
+                alias_id,
                 organization_id,
                 alias_name,
+                come_from,
                 created_at,
                 updated_at,
             )
 
         # Use not visited org_name as alias.
         for (
-            id,
+            alias_id,
             organization_id,
             org_name,
             alias_name,
+            come_from,
             created_at,
             updated_at,
         ) in aliases:
@@ -196,9 +206,10 @@ def load_orgalias_csv_and_patch(orgalias_csv, ovalmaster_csv, tqdm=True):
             # logger.info(f'id={id}, use org_name as aliase')
             yield (
                 # Use negative value to avoid conflict.
-                -int(id),
+                -int(alias_id),
                 organization_id,
                 org_name,
+                come_from,
                 created_at,
                 updated_at,
             )
@@ -227,24 +238,26 @@ def load_orgcodecollate_csv_default(orgcodecollate_csv, tqdm=True):
         skip_header=True,
         tqdm=tqdm,
     ):
-        id = struct['ORGCODECOLLATEID']
-        upstream_id = struct['DTID']
-        downstream_id = struct['ORGID']
-        query = struct['ORGNAME']
-        query_tokens = struct['ORGNAMETOKENS']
-        request_at = struct['REQUESTDATE']
-        response_at = struct['RESPONSEDATE']
-        created_at = struct['CREATEDATE']
-        updated_at = struct['UPDATETIME']
+        collation_id = struct['collation_id']
+        upstream_id = struct['upstream_id']
+        downstream_id = struct['downstream_id']
+        query = struct['query_name']
+        query_tokens = struct['query_name_tokens']
+        request_at = struct['request_at'][:19]
+        response_at = struct['response_at'][:19]
+        come_from = struct.get('come_from', '历史运营')
+        created_at = struct['created_at'][:19]
+        updated_at = struct['updated_at'][:19]
 
         yield (
-            id,
+            collation_id,
             upstream_id,
             downstream_id,
             query,
             query_tokens,
             request_at,
             response_at,
+            come_from,
             created_at,
             updated_at,
         )
@@ -263,13 +276,14 @@ def load_orgcodecollate_csv_and_patch(orgcodecollate_csv, ovalmaster_csv, tqdm=T
     num_skip = 0
 
     for (
-        id,
+        collation_id,
         upstream_id,
         downstream_id,
         query,
         query_tokens,
         request_at,
         response_at,
+        come_from,
         created_at,
         updated_at,
     ) in load_orgcodecollate_csv_default(orgcodecollate_csv, tqdm=tqdm):
@@ -292,13 +306,14 @@ def load_orgcodecollate_csv_and_patch(orgcodecollate_csv, ovalmaster_csv, tqdm=T
             continue
 
         yield (
-            id,
+            collation_id,
             upstream_id,
             downstream_id,
             query,
             query_tokens,
             request_at,
             response_at,
+            come_from,
             created_at,
             updated_at,
         )
@@ -359,6 +374,7 @@ CREATE TABLE public.organization (
     city character varying(255),
     county character varying(255),
     address character varying(255),
+    come_from character varying(255) DEFAULT '人工标注',
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
     deleted_at timestamp with time zone
@@ -416,10 +432,11 @@ SET default_tablespace = '';
 --
 
 CREATE TABLE public.alias (
-    id bigint NOT NULL,
     tenant_id bigint NOT NULL,
+    id bigint NOT NULL,
     organization_id bigint NOT NULL,
     name character varying(255) NOT NULL,
+    come_from character varying(255) DEFAULT '人工标注',
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
     deleted_at timestamp with time zone
@@ -517,6 +534,7 @@ CREATE TABLE public."collation" (
     query_name_tokens character varying(255),
     request_at timestamp with time zone,
     response_at timestamp with time zone,
+    come_from character varying(255) DEFAULT '人工标注',
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
     deleted_at timestamp with time zone
@@ -538,6 +556,10 @@ ALTER TABLE ONLY public."collation"
 --
             '''
         )
+
+
+def pg_create_task_table(postgres_config):
+    config = PostgresConfig(**postgres_config)
 
     with create_pg_cursor(config, commit=True) as cur:
         cur.execute(
@@ -661,98 +683,6 @@ ALTER TABLE ONLY public.model
         )
 
 
-def pg_create_task_table(postgres_config):
-    config = PostgresConfig(**postgres_config)
-
-    with create_pg_cursor(config, commit=True) as cur:
-        cur.execute(
-            '''
---
--- PostgreSQL database dump
---
-
--- Dumped from database version 11.5
--- Dumped by pg_dump version 13.3
-
-SET statement_timeout = 0;
-SET lock_timeout = 0;
-SET idle_in_transaction_session_timeout = 0;
-SET client_encoding = 'UTF8';
-SET standard_conforming_strings = on;
-SELECT pg_catalog.set_config('search_path', '', false);
-SET check_function_bodies = false;
-SET xmloption = content;
-SET client_min_messages = warning;
-SET row_security = off;
-
-SET default_tablespace = '';
-
---
--- Name: task; Type: TABLE; Schema: public; Owner: postgres
---
-
-CREATE TABLE public.task (
-    id bigint NOT NULL,
-    start_time timestamp with time zone NOT NULL,
-    end_time timestamp with time zone NOT NULL,
-    status character varying(255) NOT NULL,
-    scheduled_at timestamp with time zone,
-    ended_at timestamp with time zone
-);
-
-
-ALTER TABLE public.task OWNER TO postgres;
-
---
--- Name: task_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
---
-
-CREATE SEQUENCE public.task_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER TABLE public.task_id_seq OWNER TO postgres;
-
---
--- Name: task_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
---
-
-ALTER SEQUENCE public.task_id_seq OWNED BY public.task.id;
-
-
---
--- Name: task id; Type: DEFAULT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.task ALTER COLUMN id SET DEFAULT nextval('public.task_id_seq'::regclass);
-
-
---
--- Name: task task_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.task
-    ADD CONSTRAINT task_pkey PRIMARY KEY (id);
-
-
---
--- Name: task_id_index; Type: INDEX; Schema: public; Owner: postgres
---
-
-CREATE UNIQUE INDEX task_id_index ON public.task USING btree (id) INCLUDE (id);
-
-
---
--- PostgreSQL database dump complete
---
-            '''
-        )
-
-
 def pg_drop_indices(postgres_config, table_name):
     config = PostgresConfig(**postgres_config)
 
@@ -801,8 +731,9 @@ def upload_orgs_to_pg(ovalmaster_csv, tenant_id, postgres_config):
         rows = []
         for (
             organization_id,
-            (province, city, county),
             name,
+            (province, city, county),
+            come_from,
             created_at,
             updated_at,
         ) in orgs:
@@ -818,6 +749,7 @@ def upload_orgs_to_pg(ovalmaster_csv, tenant_id, postgres_config):
                 province,
                 city,
                 county,
+                come_from,
                 created_at,
                 updated_at,
             ))
@@ -835,6 +767,7 @@ def upload_orgs_to_pg(ovalmaster_csv, tenant_id, postgres_config):
                     province,
                     city,
                     county,
+                    come_from,
                     created_at,
                     updated_at
                 )
@@ -878,19 +811,21 @@ def upload_aliases_to_pg(orgalias_csv, ovalmaster_csv, tenant_id, postgres_confi
     for aliases in group_by(load_orgalias_csv(orgalias_csv, ovalmaster_csv), 10000):
         rows = []
         for (
-            id,
+            alias_id,
             organization_id,
             name,
+            come_from,
             created_at,
             updated_at,
         ) in aliases:
             created_at = datetime.strptime(created_at, '%Y-%m-%d %H:%M:%S')
             updated_at = datetime.strptime(updated_at, '%Y-%m-%d %H:%M:%S')
             rows.append((
-                id,
                 tenant_id,
+                alias_id,
                 organization_id,
                 name,
+                come_from,
                 created_at,
                 updated_at,
             ))
@@ -902,10 +837,11 @@ def upload_aliases_to_pg(orgalias_csv, ovalmaster_csv, tenant_id, postgres_confi
                 '''
                 INSERT INTO public.alias
                 (
-                    id,
                     tenant_id,
+                    id,
                     organization_id,
                     name,
+                    come_from,
                     created_at,
                     updated_at
                 )
@@ -949,13 +885,14 @@ def upload_collations_to_pg(orgcodecollate_csv, ovalmaster_csv, tenant_id, postg
     for collations in group_by(load_orgcodecollate_csv(orgcodecollate_csv, ovalmaster_csv), 10000):
         rows = []
         for (
-            id,
+            collation_id,
             upstream_id,
             downstream_id,
             query,
             query_tokens,
             request_at,
             response_at,
+            come_from,
             created_at,
             updated_at,
         ) in collations:
@@ -967,14 +904,15 @@ def upload_collations_to_pg(orgcodecollate_csv, ovalmaster_csv, tenant_id, postg
             else:
                 created_at = updated_at
             rows.append((
-                id,
                 tenant_id,
+                collation_id,
                 upstream_id,
                 downstream_id,
                 query,
                 query_tokens,
                 request_at,
                 response_at,
+                come_from,
                 created_at,
                 updated_at,
             ))
@@ -986,14 +924,15 @@ def upload_collations_to_pg(orgcodecollate_csv, ovalmaster_csv, tenant_id, postg
                 '''
                 INSERT INTO public.collation
                 (
-                    collation_id,
                     tenant_id,
+                    collation_id,
                     upstream_id,
                     downstream_id,
                     query_name,
                     query_name_tokens,
                     request_at,
                     response_at,
+                    come_from,
                     created_at,
                     updated_at
                 )
@@ -1018,3 +957,18 @@ def pg_build_index_collations(postgres_config):
             (query_name);
             '''
         )
+
+
+def pg_backup_tables(postgres_config, bak_csv_fd):
+    config = postgres_config
+    if isinstance(postgres_config, dict):
+        config = PostgresConfig(**postgres_config)
+
+    bak_csv_fd = io.folder(bak_csv_fd, touch=True)
+    for t_name in ('organization', 'alias', 'collation'):
+        bak_csv = bak_csv_fd / f'{t_name}.csv'
+        logger.info(f'Backup table={t_name}')
+        with create_pg_cursor(config) as cur:
+            with bak_csv.open('w') as fp:
+                cur.copy_expert(f"COPY public.{t_name} TO STDOUT WITH CSV HEADER", fp)
+    logger.info(f'Saved to {bak_csv_fd}')

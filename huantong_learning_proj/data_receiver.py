@@ -1,18 +1,26 @@
 import logging
 from itertools import chain
+
 import psycopg2.extras
 
-from huantong_learning_proj.db import create_pg_cursor
+from huantong_learning_proj.db import (
+    create_pg_cursor,
+    get_train_tasks_by_status,
+    get_train_by_task_ids,
+    delete_train_by_task_ids,
+    get_model_by_task_ids,
+    delete_model_by_task_ids,
+)
 
-# logger = logging.getLogger('huantong_learning_proj.job')
-logger = logging.getLogger('__main__')
+logger = logging.getLogger('huantong_learning_proj.job')
+# logger = logging.getLogger('__main__')
 
 
 def get_org_and_alias_by_result(tenant_id, struct):
     alias_names = struct['alias_names']
     assert isinstance(alias_names, list)
 
-    return (
+    org = (
         tenant_id,
         struct['downstream_id'],
         struct['downstream_name'],
@@ -20,11 +28,13 @@ def get_org_and_alias_by_result(tenant_id, struct):
         struct['city'],
         struct['country'],
         struct['address'],
-    ), {(
+    )
+    aliases = {(
         alias['tenant_id'],
         alias['organization_id'],
         alias['name'],
     ) for alias in alias_names}
+    return org, aliases
 
 
 def delete_orgs_by_organization_ids(pg_config, tenant_id, organization_ids):
@@ -44,6 +54,7 @@ def delete_orgs_by_organization_ids(pg_config, tenant_id, organization_ids):
 
 
 def delete_collations_by_collation_ids(pg_config, collation_ids):
+    """ 经过内部探讨, 目前暂不支持多租户问题, 故 tenant_id 固定为 1 """
     assert isinstance(collation_ids, (tuple, list))
 
     if not collation_ids:
@@ -198,9 +209,126 @@ def delete_label_data(pg_config, task_body):
     return {'msg': '删除成功!'}
 
 
-def get_training_task(pg_config, task_body):
-    pass
+def init_train_task(pg_config, original_model_path):
+    initial_train_task = list(get_train_by_task_ids(pg_config, [-1]))
+    if not initial_train_task:
+        with create_pg_cursor(pg_config, commit=True) as cur:
+            cur.execute(
+                '''
+                INSERT INTO public.train
+                (
+                    task_id,
+                    name,
+                    description,
+                    status,
+                    storage_path
+                )
+                VALUES
+                %s
+                ''',
+                ((-1, '原初模型', '原始的初期模型(一期)', '训练完成', original_model_path),),
+            )
 
 
-def add_train_task(pg_config, task_body):
-    pass
+def get_training_task(pg_config):
+    train_tasks = []
+    for train_task in chain(
+        get_train_tasks_by_status(pg_config, '准备中'),
+        get_train_tasks_by_status(pg_config, '训练中'),
+    ):
+        train_tasks.append(train_task)
+
+    return train_tasks
+
+
+def insert_train_task(pg_config, task_body):
+    train_id = task_body['task_id']
+    train_task = (train_id, task_body['name'], task_body['description'], '准备中')
+
+    with create_pg_cursor(pg_config, commit=True) as cur:
+        cur.execute(
+            '''
+            INSERT INTO public.train
+            (
+                task_id,
+                name,
+                description,
+                status
+            )
+            VALUES
+            %s
+            ''',
+            (train_task,),
+        )
+
+    return train_id
+
+
+def delete_train_task(pg_config, task_ids, force=False):
+    train_ids = [task_id for task_id in task_ids if task_id != -1]  # 一期原初模型的task_id设为-1
+    train_tasks = get_train_by_task_ids(pg_config, train_ids)
+    deleted_ids = []
+    not_deleted_ids = []
+    for train_task in train_tasks:
+        if not force and train_task.status in {'训练中', '使用中'}:  # 不可删的
+            not_deleted_ids.append(train_task.task_id)
+            continue
+        deleted_ids.append(train_task.task_id)
+
+    logger.info(f'deleted_ids={deleted_ids}')
+    logger.info(f'not_deleted_ids={not_deleted_ids}')
+
+    if deleted_ids:
+        delete_train_by_task_ids(pg_config, deleted_ids)
+    if not_deleted_ids:
+        return {'errorMessage': f'处于训练中或使用中的训练任务不可删除, the task_ids={not_deleted_ids}'}
+
+    return {'msg': '删除成功!'}
+
+
+def insert_upgrade_task(pg_config, task_body):
+    model_id = task_body['task_id']
+    model_task = (
+        model_id, task_body['name'], task_body['description'], task_body['model_source'], '升级中'
+    )
+    logger.info(model_task)
+
+    with create_pg_cursor(pg_config, commit=True) as cur:
+        cur.execute(
+            '''
+            INSERT INTO public.model
+            (
+                task_id,
+                name,
+                description,
+                model_source,
+                status
+            )
+            VALUES
+            %s
+            ''',
+            (model_task,),
+        )
+
+    return model_id
+
+
+def delete_upgrade_task(pg_config, task_ids, force=False):
+    model_tasks = get_model_by_task_ids(pg_config, task_ids)
+    deleted_ids = []
+    not_deleted_ids = []
+    for model_task in model_tasks:
+        if not force and model_task.status == '升级中':  # 不可删的
+            not_deleted_ids.append(model_task.task_id)
+            continue
+        deleted_ids.append(model_task.task_id)
+
+    logger.info(f'deleted_ids={deleted_ids}')
+    logger.info(f'not_deleted_ids={not_deleted_ids}')
+
+    if deleted_ids:
+        delete_model_by_task_ids(pg_config, deleted_ids)
+    if not_deleted_ids:
+        return {'errorMessage': f'处于升级中的升级任务不可删除, the task_ids={not_deleted_ids}'}
+
+    return {'msg': '删除成功!'}
