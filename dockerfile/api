@@ -1,0 +1,13 @@
+FROM wden/wden:devel-cpu-ubuntu18.04-python3.8
+
+ADD 'data/wheels' '/usr/src/wheels'
+
+RUN PIP_INDEX_URL='https://mirrors.cloud.tencent.com/pypi/simple/' \
+    pip install --no-cache-dir --find-links='/usr/src/wheels' \
+    'huantong_learning_proj[api]==0.1.0'
+
+ENTRYPOINT gunicorn \
+    --worker-tmp-dir /dev/shm \
+    --log-file=- \
+    --workers=3 --threads=6 --worker-class=gthread \
+    'huantong_learning_proj.api:app'

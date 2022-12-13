@@ -4,3 +4,10 @@ requires = [
     "wheel"
 ]
 build-backend = "setuptools.build_meta"
+
+[tool.pyright]
+include = [
+ "huantong_learning_proj",
+]
+# reportGeneralTypeIssues = false
+# typeCheckingMode = "strict"
